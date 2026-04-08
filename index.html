@@ -179,6 +179,7 @@ let _country = null;
 let _currentQuestion = null;
 let _nextQuestion = null;
 let _selectedRating = 0;
+let _attemptsToday = 0;
 
 // ─── SUPABASE HELPER ──────────────────────────────────────
 async function sb(path, options = {}) {
@@ -298,10 +299,11 @@ async function getRecentQuestionIds(limit) {
 }
 
 async function fetchNextQuestion(email, country) {
-  const [attemptsToday, recentIds] = await Promise.all([
-    getAttemptsToday(email),
+  const [, recentIds] = await Promise.all([
+    Promise.resolve(_attemptsToday),
     getRecentQuestionIds(10)
   ]);
+  const attemptsToday = _attemptsToday;
 
   if (attemptsToday >= DAILY_MAX) {
     return { dailyLimitReached: true, attemptsToday, dailyMax: DAILY_MAX };
@@ -358,6 +360,13 @@ async function startQuiz() {
         method: 'PATCH', prefer: 'return=minimal',
         body: { country }
       });
+    }
+    // Load today's attempts once
+    _attemptsToday = await getAttemptsToday(_email);
+    // Check daily limit immediately
+    if (_attemptsToday >= DAILY_MAX) {
+      renderDailyLimit({ attemptsToday: _attemptsToday, dailyMax: DAILY_MAX });
+      return;
     }
     // Check if first time (no name)
     if (!user.full_name) {
@@ -460,7 +469,7 @@ function renderDailyLimit(res) {
     <div class="card" style="text-align:center;">
       ${getLogo()}
       <h2>🎉 Well done!</h2>
-      <p>You've completed ${res.attemptsToday} question(s) today.</p>
+      <p>You've completed ${DAILY_MAX} question(s) today.</p>
       <p class="small">Come back tomorrow for more!</p>
       <button class="lb-btn" onclick="renderLeaderboard()" style="width:100%;margin-top:12px;padding:12px;font-size:15px;">🏆 Access Leaderboard</button>
     </div>`;
@@ -501,6 +510,8 @@ async function submitAnswer() {
   const pts = isCorrect ? (POINTS[q.difficulty.toLowerCase()] || 10) : 0;
 
   try {
+    // Increment client-side counter immediately
+    _attemptsToday++;
     // Write response
     await sb('responses', {
       method: 'POST', prefer: 'return=minimal',
