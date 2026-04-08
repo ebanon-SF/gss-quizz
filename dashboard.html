@@ -254,14 +254,22 @@
 <script>
 const SUPABASE_URL = 'https://qmkwbcaaxapaybvdoqer.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFta3diY2FheGFwYXlidmRvcWVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2MzU4OTIsImV4cCI6MjA5MTIxMTg5Mn0.yhK4OLsEe9IYsmYwtEdvsRrwaJtyo7JXCnPAhB8gChE';
-const PASSWORD_HASH = 'QuiZZLion147!';
+const PASSWORD_HASH = 'fe6a8706d4de9397b29cbf63716ae1cf35ee72f9e75fee73ffc209ccd7ceee7a';
 
 let _charts = {};
 
 // ── AUTH ──────────────────────────────────────────────────
-function checkLogin() {
+async function hashPassword(pwd) {
+  const msgBuffer = new TextEncoder().encode(pwd);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function checkLogin() {
   const pwd = document.getElementById('pwdInput').value;
-  if (pwd === PASSWORD_HASH) {
+  const hashed = await hashPassword(pwd);
+  if (hashed === PASSWORD_HASH) {
     sessionStorage.setItem('gss_auth', '1');
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
@@ -311,14 +319,11 @@ async function loadDashboard() {
   const dateFrom = getDateFrom();
   const country = document.getElementById('countryFilter').value;
 
-  // Build responses query
-  let rQuery = `responses?created_at=gte.${encodeURIComponent(dateFrom)}&select=*`;
-  let uQuery = `users?select=email,full_name,country,total_points,correct_answers,total_attempts,current_streak`;
-
+  // Parallel calls with pagination limit
   const [responses, users, feedback] = await Promise.all([
-    sb(rQuery),
-    sb(uQuery),
-    sb(`feedback?created_at=gte.${encodeURIComponent(dateFrom)}&select=rating,email`)
+    sb(`responses?created_at=gte.${encodeURIComponent(dateFrom)}&select=email,is_correct,points,category,difficulty,question_text&order=created_at.desc&limit=1000`),
+    sb(`users?select=email,full_name,country&limit=500`),
+    sb(`feedback?created_at=gte.${encodeURIComponent(dateFrom)}&select=rating,email&limit=500`)
   ]);
 
   // Filter by country if needed
